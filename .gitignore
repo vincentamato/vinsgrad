@@ -1,3 +1,6 @@
 __pycache__/
 mnist_data/
 checkpoints/
+dist/
+vingsgrad.egg-info/
+build/

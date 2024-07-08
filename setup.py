@@ -7,7 +7,7 @@ setup(
     name="vinsgrad",
     version="0.1.0",
     author="Vincent Amato",
-    author_email="Vincent Amato",
+    author_email="vincentaamato@gmail.com",
     description="A lightweight deep learning library inspired from Karpathy's micrograd, smolorg's smolgrad, and PyTorch",
     long_description=long_description,
     long_description_content_type="text/markdown",
