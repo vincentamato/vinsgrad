@@ -92,19 +92,20 @@ for epoch in range(num_epochs):
     print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}')
 num_epochs = 5
 
+num_epochs = 5
+
 for epoch in range(num_epochs):
-    for batch_idx, (data, target) in enumerate(train_loader):
-        # Forward pass
-        output = model(data)
-        loss = criterion(output, target)
-
-        # Backward pass and optimization
-        optimizer.zero_grad()  # Zero out previous gradients
-        loss.backward()        # Compute gradients
-        optimizer.step()       # Update weights
-
-        if batch_idx % 100 == 0:
-            print(f'Epoch {epoch+1}, Batch {batch_idx}, Loss: {loss.item():.4f}')
+    model.train()
+    running_loss = 0.0
+    for i, (images, labels) in enumerate(train_loader):
+        optimizer.zero_grad()                # Zero out previous gradients
+        outputs = model(images)              # Compute logits
+        loss = criterion(outputs, labels)    # Compute loss
+        loss.backward()                      # Compute gradients
+        optimizer.step()                     # Udpate weights
+        running_loss += loss.item()
+        
+    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}')
 ```
 Here's what's happening in each iteration:
 1. We perform a forward pass through the model, computing the loss.
