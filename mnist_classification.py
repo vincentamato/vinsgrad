@@ -1,11 +1,9 @@
+import vinsgrad
 import vinsgrad.nn as nn
 import vinsgrad.optim as optim
 from vinsgrad.vision import datasets, transforms
 from vinsgrad.utils.data import DataLoader
-from vinsgrad.utils.save_load import save, load
-import numpy as np
 
-print("Imported all necessary modules.")
 # Define the transforms
 transform_pipeline = transforms.Compose([
     transforms.ToTensor(),
@@ -13,29 +11,24 @@ transform_pipeline = transforms.Compose([
     transforms.Flatten()
 ])
 
-print("Loading MNIST data...")
-mnist_data = datasets.MNIST(root='data', transform=transform_pipeline)
-print("MNIST data loaded.")
 
-print("Getting train and test data...")
+# Load the MNIST dataset
+mnist_data = datasets.MNIST(transform=transform_pipeline)
+
+# Split the dataset into train and test sets
 train_images, train_labels = mnist_data.get_train_data()
 test_images, test_labels = mnist_data.get_test_data()
-print("Train and test data acquired.")
 
-print("Splitting data...")
+# Split the train set into train and validation sets
 train_size = int(0.8 * len(train_images))
 val_size = len(train_images) - train_size
 train_images, val_images = train_images[:train_size], train_images[train_size:]
 train_labels, val_labels = train_labels[:train_size], train_labels[train_size:]
-print("Data split complete.")
 
-print("Creating data loaders...")
+# Create data loaders
 train_loader = DataLoader(train_images, train_labels, batch_size=64, shuffle=True)
 val_loader = DataLoader(val_images, val_labels, batch_size=64, shuffle=False)
 test_loader = DataLoader(test_images, test_labels, batch_size=64, shuffle=False)
-print("Data loaders created.")
-
-print("Starting training loop...")
 
 
 # Define the model
@@ -73,9 +66,9 @@ def evaluate(model, data_loader, criterion):
         loss = criterion(outputs, labels)
         total_loss += loss.item()
         
-        predicted = np.argmax(outputs.data, axis=1)
+        predicted = vinsgrad.argmax(outputs.data, axis=1)
         total += labels.shape[0]
-        correct += (predicted == np.argmax(labels.data, axis=1)).sum().item()
+        correct += (predicted == vinsgrad.argmax(labels.data, axis=1)).sum().item()
     
     avg_loss = total_loss / len(data_loader)
     accuracy = correct / total
@@ -83,10 +76,10 @@ def evaluate(model, data_loader, criterion):
 
 # Training loop
 num_epochs = 10
-save_interval = 5
 best_val_accuracy = 0.0
 
 for epoch in range(num_epochs):
+    model.train()
     running_loss = 0.0
     for i, (images, labels) in enumerate(train_loader):
         optimizer.zero_grad()
@@ -104,27 +97,17 @@ for epoch in range(num_epochs):
           f'Val Loss: {val_loss:.4f}, '
           f'Val Accuracy: {val_accuracy:.4f}')
     
-    # Save checkpoint
-    if (epoch + 1) % save_interval == 0:
-        save({
-            'epoch': epoch + 1,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'val_loss': val_loss,
-            'val_accuracy': val_accuracy
-        }, model_name='mnist_mlp', epoch=epoch+1)
-    
     # Save best model
     if val_accuracy > best_val_accuracy:
         best_val_accuracy = val_accuracy
-        save(model.state_dict(), model_name='mnist_mlp', is_best=True)
+        vinsgrad.save(model.state_dict(), model_name='mnist_mlp', is_best=True)
 
 # Final evaluation on test set
 test_loss, test_accuracy = evaluate(model, test_loader, criterion)
 print(f'Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}')
 
 # Save final model
-save({
+vinsgrad.save({
     'epoch': num_epochs,
     'model_state_dict': model.state_dict(),
     'optimizer_state_dict': optimizer.state_dict(),

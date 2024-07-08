@@ -44,7 +44,7 @@ class MNIST:
 
     def apply_transform(self, images):
         if self.transform:
-            transformed = [self.transform(img) for img in images]
+            transformed = [self.transform(img).data if isinstance(self.transform(img), Tensor) else self.transform(img) for img in images]
             return np.array(transformed)
         return images
 

@@ -30,6 +30,19 @@ def set_grad_enabled(mode):
     Tensor.grad_enabled = mode
     return previous
 
+def argmax(tensor, axis):
+    """
+    Returns the indices of the maximum values along an axis.
+    
+    Args:
+        tensor (Tensor): The input tensor.
+        axis (int): The axis along which to find the maximum value.
+    
+    Returns:
+        Tensor: A tensor of indices.
+    """
+    return np.argmax(tensor.data, axis=axis)
+
 class Tensor:
 
     grad_enabled = True
@@ -37,7 +50,7 @@ class Tensor:
     def __init__(self, data, _children=(), requires_grad=False):
         self.data = np.array(data, dtype=np.float32)
         self.requires_grad = requires_grad
-        self.grad = np.zeros_like(self.data) if self.requires_grad and self.grad_enabled else None
+        self.grad = np.zeros_like(self.data) if requires_grad is True else None
         self._prev = set(_children)
         self.grad_fn = None
         self._shape = self.data.shape
@@ -64,8 +77,10 @@ class Tensor:
             if v.grad_fn is not None:
                 v.grad_fn()
       
-    def set_requires_grad(self, val):
-        self.requires_grad = val
+    def set_requires_grad(self, requires_grad):
+        self.requires_grad = requires_grad
+        if requires_grad and self.grad is None:
+            self.grad = np.zeros_like(self.data)
 
     def zero_grad(self):
         self.grad = np.zeros_like(self.data)
@@ -156,6 +171,8 @@ class Tensor:
         if self.grad_enabled:
             def _mul_backward():
                 if self.requires_grad:
+                    if self.grad is None:
+                        print("self grad is none")
                     self.grad += other.data * out.grad
                 if other.requires_grad:
                     other.grad += self.data * out.grad
@@ -254,6 +271,7 @@ class Tensor:
             self.grad += (self.data == out.data) * out.grad
         
         out.grad_fn = _max_grad
+        out.set_requires_grad(True) 
         return out
     
     def exp(self):

@@ -8,7 +8,7 @@ class MSELoss(Module):
 
     def forward(self, y_pred: Tensor, y_true: Tensor):
         loss = ((y_pred - y_true) ** 2).mean()
-        loss.requires_grad = True
+        loss.set_requires_grad(True)
         return loss
     
 class CrossEntropyLoss(Module):
@@ -22,5 +22,5 @@ class CrossEntropyLoss(Module):
         epsilon = 1e-9
         probs = probs + epsilon
         loss = -(y_true * probs.log()).sum(axis=1).mean()
-        loss.requires_grad = True
+        loss.set_requires_grad(True)
         return loss

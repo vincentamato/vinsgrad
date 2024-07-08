@@ -33,6 +33,14 @@ class DataLoader:
 
     @staticmethod
     def default_collate(batch_data, batch_target):
-        inputs = Tensor(np.array(batch_data))
-        targets = Tensor(np.array(batch_target))
+        if isinstance(batch_data[0], Tensor):
+            inputs = Tensor(np.stack([d.data for d in batch_data]))
+        else:
+            inputs = Tensor(np.array(batch_data))
+        
+        if isinstance(batch_target[0], Tensor):
+            targets = Tensor(np.stack([t.data for t in batch_target]))
+        else:
+            targets = Tensor(np.array(batch_target))
+        
         return inputs, targets
