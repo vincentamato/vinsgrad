@@ -4,7 +4,7 @@ from urllib.request import urlretrieve
 from ...core import Tensor
 
 class MNIST:
-    def __init__(self, root='./data', download=True, transform=None):
+    def __init__(self, root='./mnist_data', download=True, transform=None):
         self.root = root
         self.filename = 'mnist.npz'
         self.filepath = os.path.join(self.root, self.filename)
