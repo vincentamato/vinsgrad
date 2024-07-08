@@ -1,5 +1,4 @@
 import numpy as np
-from typing import Tuple
 from ..core import Tensor
 from .module import Module
 

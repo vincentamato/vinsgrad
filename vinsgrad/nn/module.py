@@ -57,7 +57,9 @@ class Module:
         for name, param in self._parameters.items():
             state[name] = param.data
         for name, module in self._modules.items():
-            state[name] = module.state_dict()
+            module_state = module.state_dict()
+            for key, value in module_state.items():
+                state[f"{name}.{key}"] = value
 
         return state
 
@@ -69,13 +71,15 @@ class Module:
             state_dict (dict): a dict containing parameters and persistent buffers.
         """
         for name, param in state_dict.items():
-            if name in self._parameters:
+            if '.' in name:
+                module_name, param_name = name.split('.', 1)
+                if module_name in self._modules:
+                    self._modules[module_name].load_state_dict({param_name: param})
+            elif name in self._parameters:
                 self._parameters[name].data = param
-            elif name in self._modules:
-                self._modules[name].load_state_dict(param)
             else:
                 print(f"Unexpected key in state_dict: {name}")
-    
+
     def _get_params(self) -> List[Tuple[str, Tensor]]:
         """
         Internal method to get all parameters of this module and its descendants.

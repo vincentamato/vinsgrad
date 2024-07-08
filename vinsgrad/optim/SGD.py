@@ -19,7 +19,7 @@ class SGD(Optimizer):
         """
         super().__init__(parameters, lr)
         self.momentum = momentum
-        self.velocities = [np.zeros_like(p.data) for p in self.parameters]
+        self.velocities = [np.zeros_like(p.data, dtype=np.float32) for p in self.parameters] if momentum > 0 else None
 
     def state_dict(self) -> Dict[str, Any]:
         """
@@ -52,6 +52,18 @@ class SGD(Optimizer):
         for i, p in enumerate(self.parameters):
             if p.grad is None:
                 continue
-            v = self.velocities[i]
-            v[:] = (self.momentum * v) + ((1 - self.momentum) * p.grad)
-            p.data -= (self.lr * v)
+            grad = p.grad.astype(np.float32)
+            if self.momentum > 0:
+                v = self.velocities[i]
+                v[:] = self.momentum * v + grad
+                p.data -= self.lr * v
+            else:
+                p.data -= self.lr * grad
+
+    def zero_grad(self) -> None:
+        """
+        Clears the gradients of all optimized parameters.
+        """
+        for p in self.parameters:
+            if p.grad is not None:
+                p.grad.fill(0)

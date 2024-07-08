@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="vinsgrad",
-    version="0.1.0",
+    version="0.1.1",
     author="Vincent Amato",
     author_email="vincentaamato@gmail.com",
     description="A lightweight deep learning library inspired from Karpathy's micrograd, smolorg's smolgrad, and PyTorch",

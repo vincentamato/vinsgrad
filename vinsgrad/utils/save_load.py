@@ -4,34 +4,39 @@ import os
 from datetime import datetime
 from typing import Any, Optional
 
-def save(obj: Any, model_name: str, epoch: Optional[int] = None, is_best: bool = False) -> None:
+def save(obj: Any, model_name: str, epoch: Optional[int] = None, is_best: bool = False, dir_path: str = 'checkpoints') -> str:
     """
-    Save an object to a file in the 'checkpoints' folder.
+    Save an object to a file in the specified directory.
     The object can be a state_dict or a dictionary containing multiple state_dicts.
-    Creates a 'checkpoints' folder if it doesn't exist.
+    Creates the directory if it doesn't exist.
     
     Args:
         obj (Any): The object to save.
         model_name (str): Name of the model (e.g., 'mnist_mlp').
         epoch (Optional[int]): Current epoch number (optional).
         is_best (bool): Whether this is the best model so far (optional).
+        dir_path (str): Directory path where the object should be saved.
+    
+    Returns:
+        str: The filename the object was saved to.
     """
-    checkpoints_dir = 'checkpoints'
-    os.makedirs(checkpoints_dir, exist_ok=True)
+    os.makedirs(dir_path, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     if is_best:
-        filename = f"{checkpoints_dir}/{model_name}_best.pkl.gz"
+        filename = f"{dir_path}/{model_name}_best.pkl.gz"
     elif epoch is not None:
-        filename = f"{checkpoints_dir}/{model_name}_epoch{epoch}_{timestamp}.pkl.gz"
+        filename = f"{dir_path}/{model_name}_epoch{epoch}_{timestamp}.pkl.gz"
     else:
-        filename = f"{checkpoints_dir}/{model_name}_{timestamp}.pkl.gz"
+        filename = f"{dir_path}/{model_name}_{timestamp}.pkl.gz"
 
     with gzip.open(filename, 'wb') as f:
         pickle.dump(obj, f)
     
     print(f"Model saved to {filename}")
+    
+    return filename
 
 def load(filename: str) -> Any:
     """

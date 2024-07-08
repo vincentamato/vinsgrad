@@ -29,6 +29,6 @@ __all__ = [
 ]
 
 # Metadata
-__version__ = '0.1.0'
-__author__ = 'Vinsgrad Developers'
+__version__ = '0.1.1'
+__author__ = 'Vincent Amato'
 __license__ = 'MIT'

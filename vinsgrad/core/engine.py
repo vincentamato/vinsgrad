@@ -34,7 +34,7 @@ class Tensor:
 
     grad_enabled = True
     
-    def __init__(self, data: Union[float, List, np.ndarray], 
+    def __init__(self, data: Union[float, List, np.ndarray, 'Tensor'], 
                  _children: Tuple['Tensor', ...] = (), 
                  requires_grad: bool = False) -> None:
         """
@@ -45,7 +45,10 @@ class Tensor:
             _children (Tuple[Tensor, ...]): Child tensors (for autograd).
             requires_grad (bool): Whether the tensor requires gradients.
         """
-        self.data = np.array(data, dtype=np.float32)
+        if isinstance(data, Tensor):
+            self.data = data.data
+        else:
+            self.data = np.array(data, dtype=np.float32)
         self.requires_grad = requires_grad
         self.grad: Optional[np.ndarray] = np.zeros_like(self.data) if requires_grad and self.grad_enabled else None
         self._prev = set(_children)
@@ -417,8 +420,6 @@ class Tensor:
             out.set_requires_grad(True)
         
         return out
-        
-        return out
     
     def mean(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
         """
@@ -433,23 +434,28 @@ class Tensor:
         """
         out = Tensor(np.mean(self.data, axis=axis, keepdims=keepdims), (self,), requires_grad=self.requires_grad)
         
-        def _mean_backward():
-            if self.requires_grad:
-                grad = out.grad
-                if not keepdims:
+        if self.requires_grad and Tensor.grad_enabled:
+            def _mean_backward():
+                if self.requires_grad:
+                    grad = out.grad
+                    if not keepdims:
+                        if axis is None:
+                            grad = grad.reshape((1,) * self.data.ndim)
+                        else:
+                            shape = list(self.data.shape)
+                            shape[axis] = 1
+                            grad = grad.reshape(shape)
+                    
+                    # Scale the gradient by 1/N where N is the number of elements that were averaged
                     if axis is None:
-                        grad = grad.reshape((1,) * self.data.ndim)
+                        N = self.data.size
                     else:
-                        shape = list(self.data.shape)
-                        shape[axis] = 1
-                        grad = grad.reshape(shape)
-                
-                broadcast_shape = np.broadcast_shapes(self.data.shape, grad.shape)
-                grad = np.broadcast_to(grad, broadcast_shape)
-                self.grad += grad / (np.prod(self.data.shape) / np.prod(grad.shape))
+                        N = self.data.shape[axis]
+                    
+                    self.grad += np.broadcast_to(grad, self.data.shape) / N
 
-        out.grad_fn = _mean_backward
-        out.set_requires_grad(True)
+            out.grad_fn = _mean_backward
+            out.set_requires_grad(True)
 
         return out
     

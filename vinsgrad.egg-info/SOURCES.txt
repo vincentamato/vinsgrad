@@ -1,6 +1,7 @@
 LICENSE
 README.md
 setup.py
+tests/test_core.py
 vinsgrad/__init__.py
 vinsgrad.egg-info/PKG-INFO
 vinsgrad.egg-info/SOURCES.txt
