@@ -75,23 +75,6 @@ optimizer = optim.SGD(model.parameters(), lr=0.01)
 
 Finally, let's train the model:
 ```python
-
-num_epochs = 5
-
-for epoch in range(num_epochs):
-    model.train()
-    running_loss = 0.0
-    for i, (images, labels) in enumerate(train_loader):
-        optimizer.zero_grad()                # Zero out previous gradients
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()                      # Compute gradients
-        optimizer.step()                     # Update weights
-        running_loss += loss.item()
-        
-    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}')
-num_epochs = 5
-
 num_epochs = 5
 
 for epoch in range(num_epochs):
