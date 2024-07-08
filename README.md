@@ -37,14 +37,12 @@ Let's walk through creating a simple MLP and see autograd and backpropagation in
 First, let's import the necessary modules and set up our data:
 
 ```python
-# Import the necessary packages
 import vinsgrad
 import vinsgrad.nn as nn
 import vinsgrad.optim as optim
 from vinsgrad.utils.data import DataLoader
 from vinsgrad.vision import datasets, transforms
 
-# Set up data loaders
 transform = transforms.Compose([transforms.ToTensor(), transforms.Flatten()])
 train_dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
 train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
