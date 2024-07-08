@@ -1,6 +1,6 @@
 ![logo](https://github.com/vincentamato/vinsgrad/blob/main/logo.png?raw=true)
 
-A tiny auto-grad engine insipired by Karpathy's micrograd, smolorg's smolgrad, and Pytorch. I made this libary mainly as a means of learning about autograd, and I hope it will be as helpful for you as it has been for me. It covers the core mechanics of automatic differentiation and backpropagation which are the foundations for any modern deep learning library.
+A tiny deep learning library insipired by Karpathy's micrograd, smolorg's smolgrad, and Pytorch. I made this libary mainly as a means of learning about autograd, and I hope it will be as helpful for you as it has been for me. It covers the core mechanics of automatic differentiation and backpropagation which are the foundations for any modern deep learning library.
 
 ## Installation
 
