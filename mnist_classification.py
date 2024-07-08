@@ -11,24 +11,19 @@ transform_pipeline = transforms.Compose([
     transforms.Flatten()
 ])
 
+# Load the MNIST datasets
+train_dataset = datasets.MNIST(root='./mnist_data', train=True, download=True, transform=transform_pipeline)
+test_dataset = datasets.MNIST(root='./mnist_data', train=False, download=True, transform=transform_pipeline)
 
-# Load the MNIST dataset
-mnist_data = datasets.MNIST(transform=transform_pipeline)
-
-# Split the dataset into train and test sets
-train_images, train_labels = mnist_data.get_train_data()
-test_images, test_labels = mnist_data.get_test_data()
-
-# Split the train set into train and validation sets
-train_size = int(0.8 * len(train_images))
-val_size = len(train_images) - train_size
-train_images, val_images = train_images[:train_size], train_images[train_size:]
-train_labels, val_labels = train_labels[:train_size], train_labels[train_size:]
+# Split the train dataset into train and validation sets
+train_size = int(0.8 * len(train_dataset))
+val_size = len(train_dataset) - train_size
+train_dataset, val_dataset = vinsgrad.utils.data.random_split(train_dataset, [train_size, val_size])
 
 # Create data loaders
-train_loader = DataLoader(train_images, train_labels, batch_size=64, shuffle=True)
-val_loader = DataLoader(val_images, val_labels, batch_size=64, shuffle=False)
-test_loader = DataLoader(test_images, test_labels, batch_size=64, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
 
 # Define the model
@@ -67,8 +62,12 @@ def evaluate(model, data_loader, criterion):
         total_loss += loss.item()
         
         predicted = vinsgrad.argmax(outputs.data, axis=1)
+        labels_argmax = vinsgrad.argmax(labels.data, axis=1)
         total += labels.shape[0]
-        correct += (predicted == vinsgrad.argmax(labels.data, axis=1)).sum().item()
+        
+        for i in range(labels.shape[0]):
+            if predicted.data[i] == labels_argmax.data[i]:
+                correct += 1
     
     avg_loss = total_loss / len(data_loader)
     accuracy = correct / total

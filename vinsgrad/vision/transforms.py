@@ -2,40 +2,90 @@ import numpy as np
 from ..core import Tensor
 
 class Compose:
-
+    """
+    Composes several transforms together.
+    """
     def __init__(self, transforms):
+        """
+        Initializes the Compose transform.
+        
+        Args:
+            transforms (list of callable): List of transforms to compose.
+        """
         self.transforms = transforms
 
-    def __call__(self, image):
-        for transform in self.transforms:
-            image = transform(image)
-        return image
+    def __call__(self, img):
+        """
+        Applies the composed transforms to the image.
+        
+        Args:
+            img (numpy.ndarray): The input image.
+        
+        Returns:
+            numpy.ndarray: The transformed image.
+        """
+        for t in self.transforms:
+            img = t(img)
+        return img
 
 class ToTensor:
+    """
+    Converts a numpy.ndarray to a Tensor.
+    """
 
     def __call__(self, image):
+        """
+        Converts the input image to a Tensor.
+        
+        Args:
+            image (numpy.ndarray): The input image.
+        
+        Returns:
+            Tensor: The image converted to a Tensor.
+        
+        Raises:
+            TypeError: If the input is not a numpy ndarray.
+        """
         if isinstance(image, np.ndarray):
             if image.ndim == 2:
-                # For grayscale images, add a channel dimension
                 image = image[:, :, None]
             elif image.ndim == 3 and image.shape[2] == 1:
-                # For single channel images, ensure correct shape
-                image = image[:, :, 0]  # Remove the redundant channel dimension
-                image = image[:, :, None]  # Add back the single channel dimension
-            # Convert from HWC to CHW format
+                image = image[:, :, 0]
+                image = image[:, :, None]
             image = image.transpose((2, 0, 1))
-            # Normalize the values to [0, 1]
             image = image.astype(np.float32) / 255.0
             return Tensor(image)
         else:
             raise TypeError('Input image should be a numpy ndarray. Got {}'.format(type(image)))
         
 class Normalize:
+    """
+    Normalizes a Tensor with mean and standard deviation.
+    """
     def __init__(self, mean, std):
+        """
+        Initializes the Normalize transform.
+        
+        Args:
+            mean (list or tuple): The mean for each channel.
+            std (list or tuple): The standard deviation for each channel.
+        """
         self.mean = mean
         self.std = std
 
     def __call__(self, image):
+        """
+        Normalizes the input Tensor.
+        
+        Args:
+            image (Tensor): The input image tensor.
+        
+        Returns:
+            Tensor: The normalized image tensor.
+        
+        Raises:
+            TypeError: If the input is not a Tensor.
+        """
         if isinstance(image, Tensor):
             mean = np.array(self.mean).reshape(-1, 1, 1)
             std = np.array(self.std).reshape(-1, 1, 1)
@@ -44,10 +94,17 @@ class Normalize:
             raise TypeError('Input image should be a Tensor. Got {}'.format(type(image)))
         
 class Flatten:
-
-    def __call__(self, image):
-        if isinstance(image, Tensor):
-            return Tensor(image.data.flatten())
-        else:
-            raise TypeError('Input image should be a Tensor. Got {}'.format(type(image)))
-
+    """
+    Flattens a Tensor.
+    """
+    def __call__(self, img):
+        """
+        Flattens the input image tensor.
+        
+        Args:
+            img (Tensor): The input image tensor.
+        
+        Returns:
+            Tensor: The flattened image tensor.
+        """
+        return img.reshape(-1)

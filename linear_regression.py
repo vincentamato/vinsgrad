@@ -2,7 +2,6 @@ import numpy as np
 import vinsgrad
 import vinsgrad.nn as nn
 import vinsgrad.optim as optim
-from vinsgrad.core import Tensor
 from vinsgrad.utils.data import DataLoader
 
 # Generate synthetic data
@@ -92,21 +91,3 @@ vinsgrad.save({
 }, model_name='linear_regression')
 
 print("Training completed!")
-
-# Visualize the results
-import matplotlib.pyplot as plt
-
-model.eval()
-with vinsgrad.no_grad():
-    y_pred = model(Tensor(X)).data
-
-plt.scatter(X, y, color='blue', label='True data')
-plt.plot(X, y_pred, color='red', label='Predictions')
-plt.legend()
-plt.xlabel('X')
-plt.ylabel('y')
-plt.title('Linear Regression Results')
-plt.savefig('linear_regression_results.png')
-plt.close()
-
-print("Results visualization saved as 'linear_regression_results.png'")
