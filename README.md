@@ -99,8 +99,8 @@ for epoch in range(num_epochs):
     running_loss = 0.0
     for i, (images, labels) in enumerate(train_loader):
         optimizer.zero_grad()                # Zero out previous gradients
-        outputs = model(images)
-        loss = criterion(outputs, labels)       
+        outputs = model(images)              # Compute logits
+        loss = criterion(outputs, labels)    # Compute loss
         loss.backward()                      # Compute gradients
         optimizer.step()                     # Udpate weights
         running_loss += loss.item()
