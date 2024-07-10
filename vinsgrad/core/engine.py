@@ -186,7 +186,7 @@ class Tensor:
         out = Tensor(data, _children=(self,))
         broadcasted_axes = self.broadcast_axis(self.shape, shape)[0]
 
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _broadcast_backward() -> None:
                 grad = np.sum(out.grad, axis=broadcasted_axes, keepdims=True)
                 grad = np.reshape(grad, self.shape)
@@ -228,7 +228,7 @@ class Tensor:
         if not self.requires_grad and not other.requires_grad:
             return out
 
-        if Tensor.grad_enabled:
+        if Tensor.is_grad_enabled():
             def _add_backward() -> None:
                 if self.requires_grad:
                     self.grad += out.grad
@@ -255,7 +255,7 @@ class Tensor:
         if not self.requires_grad and not other.requires_grad:
             return out
 
-        if Tensor.grad_enabled:
+        if Tensor.is_grad_enabled():
             def _mul_backward() -> None:
                 if self.requires_grad:
                     self.grad += other.data * out.grad
@@ -282,7 +282,7 @@ class Tensor:
         if not self.requires_grad and not other.requires_grad:
             return out
         
-        if Tensor.grad_enabled:
+        if Tensor.is_grad_enabled():
             def _matmul_backward():
                 if self.requires_grad:
                     self.grad += out.grad @ other.data.T
@@ -305,7 +305,7 @@ class Tensor:
         """
         out = Tensor(self.data ** other, (self,), requires_grad=self.requires_grad)
 
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _pow_backward() -> None:
                 self.grad += other * self.data ** (other - 1) * out.grad
             out.grad_fn = _pow_backward
@@ -327,7 +327,7 @@ class Tensor:
         """
         out = Tensor(self.data.reshape(shape), _children=(self, ))
 
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _reshape_backward() -> None:
                 self.grad += out.grad.reshape(self.data.shape)
             out.grad_fn = _reshape_backward
@@ -348,7 +348,7 @@ class Tensor:
         """
         out = Tensor(self.data.max(axis=axis, keepdims=keepdims), (self,), requires_grad=self.requires_grad)
         
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _max_grad() -> None:
                 self.grad += (self.data == out.data) * out.grad
             out.grad_fn = _max_grad
@@ -365,7 +365,7 @@ class Tensor:
         """
         out = Tensor(np.exp(self.data), _children=(self,))
 
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _exp_backward() -> None:
                 self.grad += out.data * out.grad
             out.grad_fn = _exp_backward
@@ -382,7 +382,7 @@ class Tensor:
         """
         out = Tensor(np.log(self.data), _children=(self, ))
 
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _log_backward() -> None:
                 self.grad += out.grad / self.data
             out.grad_fn = _log_backward
@@ -403,7 +403,7 @@ class Tensor:
         """
         out = Tensor(np.sum(self.data, axis=axis, keepdims=keepdims), _children=(self, ))
 
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _sum_backward() -> None:
                 if axis is None:
                     if keepdims:
@@ -436,7 +436,7 @@ class Tensor:
         """
         out = Tensor(np.mean(self.data, axis=axis, keepdims=keepdims), (self,), requires_grad=self.requires_grad)
         
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _mean_backward():
                 grad = out.grad
                 if not keepdims:
@@ -472,7 +472,7 @@ class Tensor:
         """
         out = Tensor(np.transpose(self.data, axes=axes), _children=(self, ))
 
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _transpose_backward() -> None:
                 self.grad += np.transpose(out.grad, axes=axes)
             out.grad_fn = _transpose_backward
@@ -647,7 +647,7 @@ class Tensor:
         """
         out = Tensor(self.data[indices], _children=(self, ), requires_grad=self.requires_grad)
 
-        if self.requires_grad and Tensor.grad_enabled:
+        if self.requires_grad and Tensor.is_grad_enabled():
             def _getitem_backward() -> None:
                 self.grad[indices] += out.grad
             out.grad_fn = _getitem_backward
