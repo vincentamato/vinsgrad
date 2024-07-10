@@ -11,6 +11,7 @@ from . import nn
 from . import optim
 from . import vision
 from . import utils
+from . import functional
 from .utils.save_load import save, load
 from .utils.utils import argmax
 from .utils.data.random_split import random_split
@@ -22,6 +23,7 @@ __all__ = [
     'optim',
     'vision',
     'utils',
+    'functional',
     'save',
     'load',
     'argmax',
