@@ -50,7 +50,7 @@ class Tensor:
         else:
             self.data = np.array(data, dtype=np.float32)
         self.requires_grad = requires_grad
-        self.grad: Optional[np.ndarray] = np.zeros_like(self.data) if requires_grad and self.grad_enabled else None
+        self.grad: Optional[np.ndarray] = np.zeros_like(self.data) if requires_grad and Tensor.is_grad_enabled() else None
         self._prev = set(_children)
         self.grad_fn: Optional[Callable] = None
         self._shape = self.data.shape
@@ -282,10 +282,12 @@ class Tensor:
         if not self.requires_grad and not other.requires_grad:
             return out
         
-        if self.requires_grad and self.grad_enabled:
+        if Tensor.grad_enabled:
             def _matmul_backward():
-                self.grad += out.grad @ other.data.T
-                other.grad += self.data.T @ out.grad
+                if self.requires_grad:
+                    self.grad += out.grad @ other.data.T
+                if other.requires_grad:
+                    other.grad += self.data.T @ out.grad
             out.grad_fn = _matmul_backward
             out.set_requires_grad(True)
             
@@ -436,23 +438,22 @@ class Tensor:
         
         if self.requires_grad and Tensor.grad_enabled:
             def _mean_backward():
-                if self.requires_grad:
-                    grad = out.grad
-                    if not keepdims:
-                        if axis is None:
-                            grad = grad.reshape((1,) * self.data.ndim)
-                        else:
-                            shape = list(self.data.shape)
-                            shape[axis] = 1
-                            grad = grad.reshape(shape)
-                    
-                    # Scale the gradient by 1/N where N is the number of elements that were averaged
+                grad = out.grad
+                if not keepdims:
                     if axis is None:
-                        N = self.data.size
+                        grad = grad.reshape((1,) * self.data.ndim)
                     else:
-                        N = self.data.shape[axis]
-                    
-                    self.grad += np.broadcast_to(grad, self.data.shape) / N
+                        shape = list(self.data.shape)
+                        shape[axis] = 1
+                        grad = grad.reshape(shape)
+                
+                # Scale the gradient by 1/N where N is the number of elements that were averaged
+                if axis is None:
+                    N = self.data.size
+                else:
+                    N = self.data.shape[axis]
+                
+                self.grad += np.broadcast_to(grad, self.data.shape) / N
 
             out.grad_fn = _mean_backward
             out.set_requires_grad(True)
@@ -479,6 +480,47 @@ class Tensor:
         
         return out
     
+    def size(self, axis: Optional[int] = None) -> int:
+        """
+        Returns the size of the tensor along a given axis.
+        
+        Args:
+            axis (Optional[int]): The axis to get the size of.
+        
+        Returns:
+            int: The size of the tensor along the given axis.
+        """
+        if axis is None:
+            return self.data.size
+        return self.data.shape[axis]
+    
+    def view(self, *shape: int) -> 'Tensor':
+        """
+        Returns a new tensor with the same data but different shape.
+        
+        The returned tensor shares the same data and must have the same number of elements,
+        but may have a different size. For a tensor to be viewed, the new view size must be
+        compatible with its original size and stride, i.e., each new view dimension must either
+        be a divisor of the corresponding original size, or the original size must be 1.
+        
+        Args:
+            shape (int): The new shape dimensions.
+        
+        Returns:
+            Tensor: A new tensor with the same data but different shape.
+        
+        Raises:
+            ValueError: If the new shape is not compatible with the original tensor's size.
+        """
+        new_size = 1
+        for s in shape:
+            if s != -1:
+                new_size *= s
+        if new_size != self.data.size and -1 not in shape:
+            raise ValueError(f"View size is not compatible with input tensor's size. "
+                            f"Input tensor's size: {self.data.size}, view size: {new_size}")
+        return self.reshape(*shape)
+
     def __hash__(self) -> int:
         """
         Returns a hash value for the tensor, based on its unique id.
@@ -612,6 +654,16 @@ class Tensor:
             out.set_requires_grad(True)
         
         return out
+    
+    def __setitem__(self, indices: Union[int, slice, Tuple[Union[int, slice], ...]], value: 'Tensor') -> None:
+        """
+        Sets a subset of the tensor using indices.
+        
+        Args:
+            indices (Union[int, slice, Tuple[Union[int, slice], ...]]): The indices to select.
+            value (Tensor): The value to set.
+        """
+        self.data[indices] = value.data
     
     def __repr__(self) -> str:
         """
