@@ -15,7 +15,10 @@ def relu(x: Tensor) -> Tensor:
     
     if x.requires_grad and x.is_grad_enabled():
         def _relu_backward() -> None:
-            x._accumulate_grad((x.data > 0) * out.grad)
+            # Convert boolean mask to the same dtype as the input data
+            grad_mask = (x.data > 0).astype(x.data.dtype)
+            if out.grad is not None:  # Add explicit check for None
+                x._accumulate_grad(grad_mask * out.grad)
         out.grad_fn = _relu_backward
         out.requires_grad = True
         
