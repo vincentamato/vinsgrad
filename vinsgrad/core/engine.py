@@ -15,7 +15,6 @@ Example:
 
 from __future__ import annotations
 
-import functools
 from typing import (
     Any,
     Callable,
@@ -83,7 +82,6 @@ class no_grad:
 class Tensor:
     """A multidimensional array with automatic differentiation support."""
     
-    # Class variables should be at the top
     grad_enabled: bool = True
     _array_ops = {
         'add': np.add,
