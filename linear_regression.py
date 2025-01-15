@@ -19,9 +19,9 @@ X_val, y_val = X[train_size:train_size+val_size], y[train_size:train_size+val_si
 X_test, y_test = X[train_size+val_size:], y[train_size+val_size:]
 
 # Create data loaders
-train_loader = DataLoader(X_train, y_train, batch_size=32, shuffle=True)
-val_loader = DataLoader(X_val, y_val, batch_size=32, shuffle=False)
-test_loader = DataLoader(X_test, y_test, batch_size=32, shuffle=False)
+train_loader = DataLoader((X_train, y_train), batch_size=32, shuffle=True)
+val_loader = DataLoader((X_val, y_val), batch_size=32, shuffle=False)
+test_loader = DataLoader((X_test, y_test), batch_size=32, shuffle=False)
 
 # Define the model
 class LinearRegression(nn.Module):
