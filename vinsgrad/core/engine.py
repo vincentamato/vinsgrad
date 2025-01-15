@@ -23,8 +23,7 @@ from typing import (
     Optional,
     Tuple,
     Union,
-    TypeVar,
-    overload,
+    TypeVar
 )
 
 import numpy as np
@@ -58,7 +57,6 @@ class OperationError(TensorError):
     """Raised when a tensor operation fails."""
     pass
 
-# Move utility functions to top
 def set_grad_enabled(mode: bool) -> bool:
     """Sets gradient computation mode globally.
     
@@ -72,8 +70,6 @@ def set_grad_enabled(mode: bool) -> bool:
     Tensor.grad_enabled = mode
     return previous
 
-# Add context manager for gradient control
-@functools.total_ordering
 class no_grad:
     """Context manager that disables gradient calculation."""
     
@@ -84,7 +80,6 @@ class no_grad:
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         Tensor.grad_enabled = self.previous
 
-# Main Tensor class improvements
 class Tensor:
     """A multidimensional array with automatic differentiation support."""
     
@@ -158,7 +153,6 @@ class Tensor:
             if v.grad_fn is not None:
                 v.grad_fn()
 
-    # Add property decorators for read-only attributes
     @property
     def dtype(self) -> np.dtype:
         """Returns the data type of the tensor."""
@@ -188,6 +182,20 @@ class Tensor:
         except ValueError as e:
             raise BroadcastError(f"Cannot broadcast shapes {self.shape} and {other.shape}") from e
 
+    def _ensure_grad(self) -> None:
+        """Ensures gradient exists for accumulation."""
+        if self.requires_grad and self.grad is None:
+            self.grad = np.zeros_like(self.data)
+
+    def _accumulate_grad(self, grad: np.ndarray) -> None:
+        """Safely accumulates gradients.
+        
+        Args:
+            grad: The gradient to accumulate.
+        """
+        self._ensure_grad()
+        self.grad = np.add(self.grad, grad)
+
     def __add__(self, other: TensorLike) -> Tensor:
         """Performs element-wise addition with broadcasting."""
         try:
@@ -198,9 +206,9 @@ class Tensor:
                 if self.is_grad_enabled():
                     def _add_backward() -> None:
                         if self.requires_grad:
-                            self.grad = np.add(self.grad, out.grad)
+                            self._accumulate_grad(out.grad)
                         if other.requires_grad:
-                            other.grad = np.add(other.grad, out.grad)
+                            other._accumulate_grad(out.grad)
                     out.grad_fn = _add_backward
                     out.requires_grad = True
 
@@ -218,9 +226,9 @@ class Tensor:
                 if self.is_grad_enabled():
                     def _mul_backward() -> None:
                         if self.requires_grad:
-                            self.grad = np.add(self.grad, other.data * out.grad)
+                            self._accumulate_grad(other.data * out.grad)
                         if other.requires_grad:
-                            other.grad = np.add(other.grad, self.data * out.grad)
+                            other._accumulate_grad(self.data * out.grad)
                     out.grad_fn = _mul_backward
                     out.requires_grad = True
 
@@ -245,7 +253,7 @@ class Tensor:
 
             if self.requires_grad and self.is_grad_enabled():
                 def _reshape_backward() -> None:
-                    self.grad = np.add(self.grad, out.grad.reshape(self.shape))
+                    self._accumulate_grad(out.grad.reshape(self.shape))
                 out.grad_fn = _reshape_backward
                 out.requires_grad = True
 
@@ -279,7 +287,10 @@ class Tensor:
                             shape = list(self.shape)
                             shape[axis] = 1
                             grad = grad.reshape(shape)
-                    self.grad = np.add(self.grad, np.broadcast_to(grad, self.shape))
+                    
+                    size = self.data.size if axis is None else self.data.shape[axis]
+                    self._accumulate_grad(np.broadcast_to(grad, self.shape) / size)
+                    
                 out.grad_fn = _sum_backward
                 out.requires_grad = True
 
@@ -325,9 +336,9 @@ class Tensor:
                 if self.is_grad_enabled():
                     def _matmul_backward() -> None:
                         if self.requires_grad:
-                            self.grad = np.add(self.grad, np.matmul(out.grad, other.data.T))
+                            self._accumulate_grad(np.matmul(out.grad, other.data.T))
                         if other.requires_grad:
-                            other.grad = np.add(other.grad, np.matmul(self.data.T, out.grad))
+                            other._accumulate_grad(np.matmul(self.data.T, out.grad))
                     out.grad_fn = _matmul_backward
                     out.requires_grad = True
 
@@ -349,7 +360,7 @@ class Tensor:
 
             if self.requires_grad and self.is_grad_enabled():
                 def _exp_backward() -> None:
-                    self.grad = np.add(self.grad, out.data * out.grad)
+                    self._accumulate_grad(out.data * out.grad)
                 out.grad_fn = _exp_backward
                 out.requires_grad = True
 
@@ -374,7 +385,7 @@ class Tensor:
 
             if self.requires_grad and self.is_grad_enabled():
                 def _log_backward() -> None:
-                    self.grad = np.add(self.grad, out.grad / self.data)
+                    self._accumulate_grad(out.grad / self.data)
                 out.grad_fn = _log_backward
                 out.requires_grad = True
 
@@ -410,7 +421,7 @@ class Tensor:
                             grad = grad.reshape(shape)
                     
                     size = self.data.size if axis is None else self.data.shape[axis]
-                    self.grad = np.add(self.grad, np.broadcast_to(grad, self.shape) / size)
+                    self._accumulate_grad(np.broadcast_to(grad, self.shape) / size)
                     
                 out.grad_fn = _mean_backward
                 out.requires_grad = True
@@ -447,7 +458,7 @@ class Tensor:
                             grad = grad.reshape(shape)
                     
                     mask = (self.data == np.max(self.data, axis=axis, keepdims=True))
-                    self.grad = np.add(self.grad, grad * mask)
+                    self._accumulate_grad(grad * mask)
                     
                 out.grad_fn = _max_backward
                 out.requires_grad = True
@@ -473,8 +484,9 @@ class Tensor:
 
             if self.requires_grad and self.is_grad_enabled():
                 def _pow_backward() -> None:
-                    self.grad = np.add(self.grad, 
-                                     power * self._array_ops['pow'](self.data, power - 1) * out.grad)
+                    self._accumulate_grad(
+                        power * self._array_ops['pow'](self.data, power - 1) * out.grad
+                    )
                 out.grad_fn = _pow_backward
                 out.requires_grad = True
 
@@ -499,3 +511,170 @@ class Tensor:
         if self.data.size != 1:
             raise ValueError("Only tensors with one element can be converted to scalar")
         return self.data.item()
+
+    def T(self) -> Tensor:
+        """Returns the transpose of the tensor.
+        
+        Returns:
+            The transposed tensor.
+            
+        Raises:
+            OperationError: If the transpose operation fails.
+        """
+        try:
+            out = Tensor(np.transpose(self.data), _children=(self,))
+
+            if self.requires_grad and self.is_grad_enabled():
+                def _transpose_backward() -> None:
+                    self._accumulate_grad(np.transpose(out.grad))
+                out.grad_fn = _transpose_backward
+                out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Transpose operation failed: {str(e)}") from e
+
+    def __radd__(self, other: TensorLike) -> Tensor:
+        """Performs reverse addition."""
+        return self + other
+
+    def __rmul__(self, other: TensorLike) -> Tensor:
+        """Performs reverse multiplication."""
+        return self * other
+
+    def __neg__(self) -> Tensor:
+        """Returns the negation of the tensor."""
+        return self * -1
+
+    def __sub__(self, other: TensorLike) -> Tensor:
+        """Performs subtraction."""
+        return self + (-other)
+
+    def __rsub__(self, other: TensorLike) -> Tensor:
+        """Performs reverse subtraction."""
+        return (-self) + other
+
+    def __truediv__(self, other: TensorLike) -> Tensor:
+        """Performs division."""
+        return self * (other ** -1)
+
+    def __rtruediv__(self, other: TensorLike) -> Tensor:
+        """Performs reverse division."""
+        return (self ** -1) * other
+
+    def __len__(self) -> int:
+        """Returns the length of the first dimension."""
+        return len(self.data)
+
+    def __getitem__(self, idx: Union[int, slice, Tuple]) -> Tensor:
+        """Implements indexing for the tensor."""
+        out = Tensor(self.data[idx], _children=(self,))
+
+        if self.requires_grad and self.is_grad_enabled():
+            def _getitem_backward() -> None:
+                grad = np.zeros_like(self.data)
+                grad[idx] = out.grad
+                self._accumulate_grad(grad)
+            out.grad_fn = _getitem_backward
+            out.requires_grad = True
+
+        return out
+
+    def size(self, dim: Optional[int] = None) -> Union[Shape, int]:
+        """Returns the size of the tensor.
+        
+        Args:
+            dim: Optional dimension to get size of.
+            
+        Returns:
+            Either the full shape or the size in a specific dimension.
+        """
+        if dim is not None:
+            return self.shape[dim]
+        return self.shape
+
+    @staticmethod
+    def broadcast_axis(left: Shape, right: Shape) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
+        """Determines the axes along which broadcasting will occur.
+        
+        Args:
+            left: Shape of the first tensor.
+            right: Shape of the second tensor.
+            
+        Returns:
+            Tuple of axes for left and right tensors that need broadcasting.
+            
+        Raises:
+            BroadcastError: If shapes cannot be broadcast together.
+        """
+        try:
+            ldim, rdim = len(left), len(right)
+            maxdim = max(ldim, rdim)
+            
+            lshape = (1,) * (maxdim - ldim) + left
+            rshape = (1,) * (maxdim - rdim) + right
+            
+            left_axes, right_axes = [], []
+            
+            for i in range(maxdim):
+                if lshape[i] > rshape[i]:
+                    right_axes.append(i)
+                elif rshape[i] > lshape[i]:
+                    left_axes.append(i)
+                elif lshape[i] != 1 or rshape[i] != 1:
+                    if lshape[i] != rshape[i]:
+                        raise ValueError(f"Incompatible shapes at axis {i}: {lshape[i]} vs {rshape[i]}")
+                        
+            return tuple(left_axes), tuple(right_axes)
+            
+        except Exception as e:
+            raise BroadcastError(f"Cannot determine broadcast axes: {str(e)}") from e
+
+    def broadcast_to(self, shape: Shape) -> Tensor:
+        """Broadcasts the tensor to a new shape.
+        
+        Args:
+            shape: The target shape to broadcast to.
+            
+        Returns:
+            A new tensor broadcast to the target shape.
+            
+        Raises:
+            BroadcastError: If tensor cannot be broadcast to target shape.
+        """
+        try:
+            data = np.broadcast_to(self.data, shape)
+            out = Tensor(data, _children=(self,))
+            
+            if self.requires_grad and self.is_grad_enabled():
+                # Get the axes that were broadcast
+                broadcasted_axes = self.broadcast_axis(self.shape, shape)[0]
+                
+                def _broadcast_backward() -> None:
+                    # Sum gradients along broadcast axes
+                    grad = out.grad
+                    if broadcasted_axes:
+                        grad = np.sum(grad, axis=broadcasted_axes, keepdims=True)
+                    # Reshape back to original shape
+                    grad = np.reshape(grad, self.shape)
+                    self._accumulate_grad(grad)
+                    
+                out.grad_fn = _broadcast_backward
+                out.requires_grad = True
+                
+            return out
+            
+        except Exception as e:
+            raise BroadcastError(f"Cannot broadcast to shape {shape}: {str(e)}") from e
+
+    def set_requires_grad(self, requires_grad: bool) -> None:
+        """Sets whether the tensor requires gradients.
+        
+        Args:
+            requires_grad: If True, gradients will be computed for this tensor.
+        """
+        self.requires_grad = requires_grad
+        if requires_grad and self.grad is None:
+            self.grad = np.zeros_like(self.data)
+        elif not requires_grad:
+            self.grad = None
