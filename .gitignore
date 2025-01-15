@@ -4,3 +4,4 @@ checkpoints/
 dist/
 vingsgrad.egg-info/
 build/
+.venv/
