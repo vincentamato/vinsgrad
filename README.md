@@ -138,12 +138,6 @@ This process, repeated for each batch in each epoch, showcases the power of auto
 
 ---
 
-## Contributing
-
-Contributions to **vinsgrad** are highly encouraged! Whether it’s fixing bugs, optimizing performance, or adding new features, your help is invaluable. Please refer to the [Contributing Guide](https://github.com/vincentamato/vinsgrad/blob/main/CONTRIBUTING.md) for more details.
-
----
-
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](https://github.com/vincentamato/vinsgrad/blob/main/LICENSE) file for details.
