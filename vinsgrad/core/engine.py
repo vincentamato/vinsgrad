@@ -1,25 +1,82 @@
-import numpy as np
-from typing import Tuple, Union, Optional, Callable, List, Any
+"""
+vinsgrad Tensor Engine.
 
+This module implements an automatic differentiation engine with a Tensor class
+that supports backpropagation. It provides functionality similar to PyTorch's
+autograd system but in a simplified form.
+
+Example:
+    >>> import vinsgrad
+    >>> x = vinsgrad.Tensor([1, 2, 3], requires_grad=True)
+    >>> y = x * 2
+    >>> y.backward()
+    >>> print(x.grad)  # Shows gradient of y with respect to x
+"""
+
+from __future__ import annotations
+
+import functools
+from typing import (
+    Any,
+    Callable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+    TypeVar,
+    overload,
+)
+
+import numpy as np
+
+TensorLike = Union[float, List, np.ndarray, 'Tensor']
+Shape = Tuple[int, ...]
+T = TypeVar('T', bound='Tensor')
+GradFn = Callable[[], None]
+
+class TensorError(Exception):
+    """Base class for Tensor-related errors."""
+    pass
+
+class GradientError(TensorError):
+    """Raised when there's an error with gradient computation."""
+    pass
+
+class ShapeError(TensorError):
+    """Raised when there's an error with tensor shapes."""
+    pass
+
+class BroadcastError(ShapeError):
+    """Raised when tensor broadcasting fails."""
+    pass
+
+class DTypeError(TensorError):
+    """Raised when there's an error with tensor data types."""
+    pass
+
+class OperationError(TensorError):
+    """Raised when a tensor operation fails."""
+    pass
+
+# Move utility functions to top
 def set_grad_enabled(mode: bool) -> bool:
-    """
-    Sets gradient computation to on or off globally.
+    """Sets gradient computation mode globally.
     
     Args:
-        mode (bool): True to enable gradients, False to disable.
+        mode: If True, enables gradient computation. If False, disables it.
     
     Returns:
-        bool: The previous grad_enabled state.
+        The previous gradient computation mode.
     """
     previous = Tensor.grad_enabled
     Tensor.grad_enabled = mode
     return previous
 
+# Add context manager for gradient control
+@functools.total_ordering
 class no_grad:
-    """
-    Context-manager that disables gradient calculation.
-    """
-
+    """Context manager that disables gradient calculation."""
+    
     def __enter__(self) -> None:
         self.previous = Tensor.grad_enabled
         Tensor.grad_enabled = False
@@ -27,61 +84,63 @@ class no_grad:
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         Tensor.grad_enabled = self.previous
 
+# Main Tensor class improvements
 class Tensor:
-    """
-    A class representing a tensor with automatic differentiation capabilities.
-    """
-
-    grad_enabled = True
+    """A multidimensional array with automatic differentiation support."""
     
-    def __init__(self, data: Union[float, List, np.ndarray, 'Tensor'], 
-                 _children: Tuple['Tensor', ...] = (), 
-                 requires_grad: bool = False) -> None:
-        """
-        Initialize a Tensor object.
-
+    # Class variables should be at the top
+    grad_enabled: bool = True
+    _array_ops = {
+        'add': np.add,
+        'mul': np.multiply,
+        'matmul': np.matmul,
+        'pow': np.power,
+    }
+    
+    def __init__(
+        self,
+        data: TensorLike,
+        _children: Tuple[Tensor, ...] = (),
+        *,  # Force keyword arguments after this
+        requires_grad: bool = False,
+        dtype: np.dtype = np.float32,
+    ) -> None:
+        """Initializes a new Tensor.
+        
         Args:
-            data (Union[float, List, np.ndarray]): The tensor data.
-            _children (Tuple[Tensor, ...]): Child tensors (for autograd).
-            requires_grad (bool): Whether the tensor requires gradients.
+            data: The data to store in the tensor.
+            _children: Child tensors in the computation graph (internal use).
+            requires_grad: Whether to compute gradients for this tensor.
+            dtype: The data type for the tensor.
+            
+        Raises:
+            ValueError: If data cannot be converted to a numpy array.
         """
-        if isinstance(data, Tensor):
-            self.data = data.data
-        else:
-            self.data = np.array(data, dtype=np.float32)
+        try:
+            self.data = (data.data if isinstance(data, Tensor) 
+                        else np.array(data, dtype=dtype))
+        except Exception as e:
+            raise ValueError(f"Could not convert data to tensor: {e}") from e
+            
         self.requires_grad = requires_grad
-        self.grad: Optional[np.ndarray] = np.zeros_like(self.data) if requires_grad and Tensor.is_grad_enabled() else None
+        self.grad = (np.zeros_like(self.data) if requires_grad and 
+                    self.is_grad_enabled() else None)
         self._prev = set(_children)
-        self.grad_fn: Optional[Callable] = None
+        self.grad_fn: Optional[GradFn] = None
         self._shape = self.data.shape
         self.ndim = self.data.ndim
 
-    @property
-    def shape(self) -> Tuple[int, ...]:
-        """
-        Returns the shape of the tensor.
-        
-        Returns:
-            Tuple[int, ...]: The shape of the tensor.
-        """
-        return self._shape
-
-    def item(self) -> Any:
-        """
-        Returns the value of the tensor as a standard Python scalar.
-        
-        Returns:
-            Any: The scalar value.
-        """
-        return self.data.item()
-
     def backward(self) -> None:
-        """
-        Computes the gradients of the tensor by backpropagation.
-        """
+        """Computes gradients through backpropagation."""
         if not self.grad_enabled:
-            raise ValueError("Cannot backward when gradient calculation is disabled.")
-        
+            raise GradientError("Gradient computation is disabled")
+            
+        if self.data.size > 1:
+            raise GradientError("backward() can only be called on scalar tensors")
+            
+        if not self.requires_grad:
+            raise GradientError("backward() called on tensor that doesn't require grad")
+            
         topo: List[Tensor] = []
         visited = set()
         
@@ -93,583 +152,350 @@ class Tensor:
                 topo.append(v)
                 
         build_topo(self)
-        
         self.grad = np.ones_like(self.data)
-
+        
         for v in reversed(topo):
             if v.grad_fn is not None:
                 v.grad_fn()
-      
-    def set_requires_grad(self, requires_grad: bool) -> None:
-        """
-        Sets whether to compute gradients for the tensor.
+
+    # Add property decorators for read-only attributes
+    @property
+    def dtype(self) -> np.dtype:
+        """Returns the data type of the tensor."""
+        return self.data.dtype
+
+    @property
+    def is_leaf(self) -> bool:
+        """Returns True if the tensor is a leaf node in the graph."""
+        return len(self._prev) == 0
+
+    def _preprocess_binop(self, other: Union[Tensor, float, int]) -> Tuple[Tensor, Tensor]:
+        """Prepares two tensors for a binary operation.
         
         Args:
-            requires_grad (bool): Flag indicating whether to compute gradients.
+            other: The other tensor or scalar value.
+            
+        Returns:
+            A tuple of (self, other) with compatible shapes.
+            
+        Raises:
+            BroadcastError: If tensors cannot be broadcast together.
         """
-        self.requires_grad = requires_grad
-        if requires_grad and self.grad is None:
-            self.grad = np.zeros_like(self.data)
+        try:
+            other = other if isinstance(other, Tensor) else Tensor(other)
+            broadcast_shape = np.broadcast_shapes(self.shape, other.shape)
+            return self.broadcast_to(broadcast_shape), other.broadcast_to(broadcast_shape)
+        except ValueError as e:
+            raise BroadcastError(f"Cannot broadcast shapes {self.shape} and {other.shape}") from e
+
+    def __add__(self, other: TensorLike) -> Tensor:
+        """Performs element-wise addition with broadcasting."""
+        try:
+            self, other = self._preprocess_binop(other)
+            out = Tensor(self._array_ops['add'](self.data, other.data), _children=(self, other))
+
+            if self.requires_grad or other.requires_grad:
+                if self.is_grad_enabled():
+                    def _add_backward() -> None:
+                        if self.requires_grad:
+                            self.grad = np.add(self.grad, out.grad)
+                        if other.requires_grad:
+                            other.grad = np.add(other.grad, out.grad)
+                    out.grad_fn = _add_backward
+                    out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Addition failed: {str(e)}") from e
+
+    def __mul__(self, other: TensorLike) -> Tensor:
+        """Performs element-wise multiplication with broadcasting."""
+        try:
+            self, other = self._preprocess_binop(other)
+            out = Tensor(self._array_ops['mul'](self.data, other.data), _children=(self, other))
+
+            if self.requires_grad or other.requires_grad:
+                if self.is_grad_enabled():
+                    def _mul_backward() -> None:
+                        if self.requires_grad:
+                            self.grad = np.add(self.grad, other.data * out.grad)
+                        if other.requires_grad:
+                            other.grad = np.add(other.grad, self.data * out.grad)
+                    out.grad_fn = _mul_backward
+                    out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Multiplication failed: {str(e)}") from e
+
+    def reshape(self, *shape: int) -> Tensor:
+        """Reshapes the tensor to the specified shape.
+        
+        Args:
+            *shape: The new shape dimensions.
+            
+        Returns:
+            A new tensor with the specified shape.
+            
+        Raises:
+            ShapeError: If the new shape is invalid.
+        """
+        try:
+            out = Tensor(self.data.reshape(shape), _children=(self,))
+
+            if self.requires_grad and self.is_grad_enabled():
+                def _reshape_backward() -> None:
+                    self.grad = np.add(self.grad, out.grad.reshape(self.shape))
+                out.grad_fn = _reshape_backward
+                out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise ShapeError(f"Reshape to {shape} failed: {str(e)}") from e
+
+    def sum(self, axis: Optional[int] = None, keepdims: bool = False) -> Tensor:
+        """Computes the sum along the specified axis.
+        
+        Args:
+            axis: The axis along which to sum.
+            keepdims: Whether to keep the summed dimensions.
+            
+        Returns:
+            A new tensor containing the sum.
+            
+        Raises:
+            OperationError: If the sum operation fails.
+        """
+        try:
+            out = Tensor(np.sum(self.data, axis=axis, keepdims=keepdims), _children=(self,))
+
+            if self.requires_grad and self.is_grad_enabled():
+                def _sum_backward() -> None:
+                    grad = out.grad
+                    if not keepdims:
+                        if axis is None:
+                            grad = grad.reshape((1,) * self.ndim)
+                        else:
+                            shape = list(self.shape)
+                            shape[axis] = 1
+                            grad = grad.reshape(shape)
+                    self.grad = np.add(self.grad, np.broadcast_to(grad, self.shape))
+                out.grad_fn = _sum_backward
+                out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Sum operation failed: {str(e)}") from e
+
+    @classmethod
+    def is_grad_enabled(cls) -> bool:
+        """Returns whether gradient computation is enabled."""
+        return cls.grad_enabled
 
     def zero_grad(self) -> None:
-        """
-        Sets the gradients of the tensor to zero.
-        """
+        """Zeros out the gradient."""
         if self.grad is not None:
             self.grad = np.zeros_like(self.data)
 
-    @staticmethod
-    def set_grad_enabled(mode: bool) -> bool:
-        """
-        Sets gradient computation to on or off globally.
-        
-        Args:
-            mode (bool): True to enable gradients, False to disable.
-        
-        Returns:
-            bool: The previous grad_enabled state.
-        """
-        return set_grad_enabled(mode)
-
-    @staticmethod
-    def is_grad_enabled() -> bool:
-        """
-        Checks whether gradient computation is enabled globally.
-        
-        Returns:
-            bool: True if gradient computation is enabled, False otherwise.
-        """
-        return Tensor.grad_enabled
-
-    @staticmethod
-    def broadcast_axis(left: Tuple[int, ...], right: Tuple[int, ...]) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
-        """
-        Determines the axes along which broadcasting will occur for two shapes.
-        
-        Args:
-            left (Tuple[int, ...]): The shape of the first tensor.
-            right (Tuple[int, ...]): The shape of the second tensor.
-        
-        Returns:
-            Tuple[Tuple[int, ...], Tuple[int, ...]]: The axes along which broadcasting will occur.
-        """
-        ldim = len(left)
-        rdim = len(right)
-        maxdim = max(ldim, rdim)
-
-        lshape_new = (1, ) * (maxdim - ldim) + left
-        rshape_new = (1, ) * (maxdim - rdim) + right
-
-        assert len(lshape_new) == len(rshape_new)
-
-        left_axes, right_axes = [], []
-
-        for i in range(len(lshape_new)):
-            if lshape_new[i] > rshape_new[i]:
-                right_axes.append(i)
-            elif rshape_new[i] > lshape_new[i]:
-                left_axes.append(i)
-
-        return tuple(left_axes), tuple(right_axes)\
-        
-    def broadcast_to(self, shape: Tuple[int, ...]) -> 'Tensor':
-        """
-        Broadcasts the tensor to a new shape.
-        
-        Args:
-            shape (Tuple[int, ...]): The new shape.
-        
-        Returns:
-            Tensor: The broadcasted tensor.
-        """
-        data = np.broadcast_to(self.data, shape)
-        out = Tensor(data, _children=(self,))
-        broadcasted_axes = self.broadcast_axis(self.shape, shape)[0]
-
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _broadcast_backward() -> None:
-                grad = np.sum(out.grad, axis=broadcasted_axes, keepdims=True)
-                grad = np.reshape(grad, self.shape)
-                self.grad += grad
-            
-            out.grad_fn = _broadcast_backward
-            out.set_requires_grad(True)
-
-        return out
-
-    def _preprocess_binop(self, other: Union['Tensor', float, int]) -> Tuple['Tensor', 'Tensor']:
-        """
-        Prepares two tensors for a binary operation by broadcasting them to a common shape.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tuple[Tensor, Tensor]: The two tensors with a common shape.
-        """
-        other = other if isinstance(other, Tensor) else Tensor(other)
-        broadcast_shape = np.broadcast_shapes(self.shape, other.shape)
-        self, other = self.broadcast_to(broadcast_shape), other.broadcast_to(broadcast_shape)
-        return self, other
-
-    def __add__(self, other: Union['Tensor', float, int]) -> 'Tensor':
-        """
-        Performs element-wise addition with broadcasting.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tensor: The result of the addition.
-        """
-        self, other = self._preprocess_binop(other)
-        out = Tensor(self.data + other.data, _children=(self, other))
-
-        if not self.requires_grad and not other.requires_grad:
-            return out
-
-        if Tensor.is_grad_enabled():
-            def _add_backward() -> None:
-                if self.requires_grad:
-                    self.grad += out.grad
-                if other.requires_grad:
-                    other.grad += out.grad
-            out.grad_fn = _add_backward
-            out.set_requires_grad(True)
-        
-        return out
-
-    def __mul__(self, other: Union['Tensor', float, int]) -> 'Tensor':
-        """
-        Performs element-wise multiplication with broadcasting.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tensor: The result of the multiplication.
-        """
-        self, other = self._preprocess_binop(other)
-        out = Tensor(self.data * other.data, _children=(self, other))
-
-        if not self.requires_grad and not other.requires_grad:
-            return out
-
-        if Tensor.is_grad_enabled():
-            def _mul_backward() -> None:
-                if self.requires_grad:
-                    self.grad += other.data * out.grad
-                if other.requires_grad:
-                    other.grad += self.data * out.grad
-            out.grad_fn = _mul_backward
-            out.set_requires_grad(True)
-        
-        return out
-    
-    def __matmul__(self, other: Union['Tensor', np.ndarray]) -> 'Tensor':
-        """
-        Performs matrix multiplication.
-        
-        Args:
-            other (Union[Tensor, np.ndarray]): The other tensor or ndarray.
-        
-        Returns:
-            Tensor: The result of the matrix multiplication.
-        """
-        other = other if isinstance(other, Tensor) else Tensor(other)
-        out = Tensor(self.data @ other.data, _children=(self, other))
-
-        if not self.requires_grad and not other.requires_grad:
-            return out
-        
-        if Tensor.is_grad_enabled():
-            def _matmul_backward():
-                if self.requires_grad:
-                    self.grad += out.grad @ other.data.T
-                if other.requires_grad:
-                    other.grad += self.data.T @ out.grad
-            out.grad_fn = _matmul_backward
-            out.set_requires_grad(True)
-            
-        return out
-    
-    def __pow__(self, other):
-        """
-        Raises the tensor to a power.
-        
-        Args:
-            other (Union[int, float]): The power to raise the tensor to.
-        
-        Returns:
-            Tensor: The result of the power operation.
-        """
-        out = Tensor(self.data ** other, (self,), requires_grad=self.requires_grad)
-
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _pow_backward() -> None:
-                self.grad += other * self.data ** (other - 1) * out.grad
-            out.grad_fn = _pow_backward
-            out.set_requires_grad(True)
-
-        return out
-    
-    
-
-    def reshape(self, *shape: int) -> 'Tensor':
-        """
-        Changes the tensor's shape.
-        
-        Args:
-            shape (int): The new shape dimensions.
-        
-        Returns:
-            Tensor: The reshaped tensor.
-        """
-        out = Tensor(self.data.reshape(shape), _children=(self, ))
-
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _reshape_backward() -> None:
-                self.grad += out.grad.reshape(self.data.shape)
-            out.grad_fn = _reshape_backward
-            out.set_requires_grad(True)
-        
-        return out
-    
-    def max(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
-        """
-        Returns the maximum of the tensor along a given axis.
-        
-        Args:
-            axis (Optional[int]): The axis to compute the maximum along.
-            keepdims (bool): Whether to keep the dimensions.
-        
-        Returns:
-            Tensor: The maximum values.
-        """
-        out = Tensor(self.data.max(axis=axis, keepdims=keepdims), (self,), requires_grad=self.requires_grad)
-        
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _max_grad() -> None:
-                self.grad += (self.data == out.data) * out.grad
-            out.grad_fn = _max_grad
-            out.set_requires_grad(True)
-        
-        return out
-    
-    def exp(self) -> 'Tensor':
-        """
-        Computes the element-wise exponential of the tensor.
-        
-        Returns:
-            Tensor: The exponential values.
-        """
-        out = Tensor(np.exp(self.data), _children=(self,))
-
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _exp_backward() -> None:
-                self.grad += out.data * out.grad
-            out.grad_fn = _exp_backward
-            out.set_requires_grad(True)
-        
-        return out
-    
-    def log(self) -> 'Tensor':
-        """
-        Computes the element-wise natural logarithm of the tensor.
-        
-        Returns:
-            Tensor: The logarithm values.
-        """
-        out = Tensor(np.log(self.data), _children=(self, ))
-
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _log_backward() -> None:
-                self.grad += out.grad / self.data
-            out.grad_fn = _log_backward
-            out.set_requires_grad(True)
-        
-        return out
-    
-    def sum(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
-        """
-        Computes the sum of the tensor elements along a given axis.
-        
-        Args:
-            axis (Optional[int]): The axis to sum along.
-            keepdims (bool): Whether to keep the dimensions.
-        
-        Returns:
-            Tensor: The sum of elements.
-        """
-        out = Tensor(np.sum(self.data, axis=axis, keepdims=keepdims), _children=(self, ))
-
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _sum_backward() -> None:
-                if axis is None:
-                    if keepdims:
-                        grad = out.grad
-                    else:
-                        grad = out.grad.reshape((1,) * self.data.ndim)
-                else:
-                    if keepdims:
-                        grad = out.grad
-                    else:
-                        shape = list(self.data.shape)
-                        shape[axis] = 1
-                        grad = out.grad.reshape(shape)
-                self.grad += np.broadcast_to(grad, self.data.shape)
-            out.grad_fn = _sum_backward
-            out.set_requires_grad(True)
-        
-        return out
-    
-    def mean(self, axis: Optional[int] = None, keepdims: bool = False) -> 'Tensor':
-        """
-        Computes the mean of the tensor elements along a given axis.
-        
-        Args:
-            axis (Optional[int]): The axis to compute the mean along.
-            keepdims (bool): Whether to keep the dimensions.
-        
-        Returns:
-            Tensor: The mean values.
-        """
-        out = Tensor(np.mean(self.data, axis=axis, keepdims=keepdims), (self,), requires_grad=self.requires_grad)
-        
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _mean_backward():
-                grad = out.grad
-                if not keepdims:
-                    if axis is None:
-                        grad = grad.reshape((1,) * self.data.ndim)
-                    else:
-                        shape = list(self.data.shape)
-                        shape[axis] = 1
-                        grad = grad.reshape(shape)
-                
-                # Scale the gradient by 1/N where N is the number of elements that were averaged
-                if axis is None:
-                    N = self.data.size
-                else:
-                    N = self.data.shape[axis]
-                
-                self.grad += np.broadcast_to(grad, self.data.shape) / N
-
-            out.grad_fn = _mean_backward
-            out.set_requires_grad(True)
-
-        return out
-    
-    def T(self, axes: Optional[Tuple[int, ...]] = None) -> 'Tensor':
-        """
-        Transposes the tensor along the given axes.
-        
-        Args:
-            axes (Optional[Tuple[int, ...]]): The axes to transpose.
-        
-        Returns:
-            Tensor: The transposed tensor.
-        """
-        out = Tensor(np.transpose(self.data, axes=axes), _children=(self, ))
-
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _transpose_backward() -> None:
-                self.grad += np.transpose(out.grad, axes=axes)
-            out.grad_fn = _transpose_backward
-            out.set_requires_grad(True)
-        
-        return out
-    
-    def size(self, axis: Optional[int] = None) -> int:
-        """
-        Returns the size of the tensor along a given axis.
-        
-        Args:
-            axis (Optional[int]): The axis to get the size of.
-        
-        Returns:
-            int: The size of the tensor along the given axis.
-        """
-        if axis is None:
-            return self.data.size
-        return self.data.shape[axis]
-    
-    def view(self, *shape: int) -> 'Tensor':
-        """
-        Returns a new tensor with the same data but different shape.
-        
-        The returned tensor shares the same data and must have the same number of elements,
-        but may have a different size. For a tensor to be viewed, the new view size must be
-        compatible with its original size and stride, i.e., each new view dimension must either
-        be a divisor of the corresponding original size, or the original size must be 1.
-        
-        Args:
-            shape (int): The new shape dimensions.
-        
-        Returns:
-            Tensor: A new tensor with the same data but different shape.
-        
-        Raises:
-            ValueError: If the new shape is not compatible with the original tensor's size.
-        """
-        new_size = 1
-        for s in shape:
-            if s != -1:
-                new_size *= s
-        if new_size != self.data.size and -1 not in shape:
-            raise ValueError(f"View size is not compatible with input tensor's size. "
-                            f"Input tensor's size: {self.data.size}, view size: {new_size}")
-        return self.reshape(*shape)
-
-    def __hash__(self) -> int:
-        """
-        Returns a hash value for the tensor, based on its unique id.
-        
-        Returns:
-            int: The hash value of the tensor.
-        """
-        return id(self)
-
-    def __eq__(self, other: object) -> bool:
-        """
-        Checks if this tensor is equal to another tensor based on their unique ids.
-        
-        Args:
-            other (object): The other tensor to compare with.
-        
-        Returns:
-            bool: True if the tensors are equal, False otherwise.
-        """
-        if not isinstance(other, Tensor):
-            return False
-        return id(self) == id(other)
-
-    
-    def __neg__(self) -> 'Tensor':
-        """
-        Negates the tensor.
-        
-        Returns:
-            Tensor: The negated tensor.
-        """
-        return self * -1
-    
-    def __sub__(self, other: Union['Tensor', float, int]) -> 'Tensor':
-        """
-        Performs element-wise subtraction with broadcasting.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tensor: The result of the subtraction.
-        """
-        return self + (-other)
-    
-    def __rsub__(self, other: Union['Tensor', float, int]) -> 'Tensor':
-        """
-        Performs element-wise reverse subtraction with broadcasting.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tensor: The result of the reverse subtraction.
-        """
-        return -self + other
-    
-    def __radd__(self, other: Union['Tensor', float, int]) -> 'Tensor':
-        """
-        Performs element-wise reverse addition with broadcasting.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tensor: The result of the reverse addition.
-        """
-        return self + other
-
-    def __rmul__(self, other: Union['Tensor', float, int]) -> 'Tensor':
-        """
-        Performs element-wise reverse multiplication with broadcasting.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tensor: The result of the reverse multiplication.
-        """
-        return self * other
-
-    def __truediv__(self, other: Union['Tensor', float, int]) -> 'Tensor':
-        """
-        Performs element-wise division with broadcasting.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tensor: The result of the division.
-        """
-        return self * (other ** -1)
-    
-    def __rtruediv__(self, other: Union['Tensor', float, int]) -> 'Tensor':
-        """
-        Performs element-wise reverse division with broadcasting.
-        
-        Args:
-            other (Union[Tensor, float, int]): The other tensor or scalar.
-        
-        Returns:
-            Tensor: The result of the reverse division.
-        """
-        return (self ** -1) * other
-    
-    def __len__(self) -> int:
-        """
-        Returns the number of elements along the first axis of the tensor.
-        
-        Returns:
-            int: The length of the tensor.
-        """
-        return len(self.data)
-    
-    def __getitem__(self, indices: Union[int, slice, Tuple[Union[int, slice], ...]]) -> 'Tensor':
-        """
-        Gets a subset of the tensor using indices.
-        
-        Args:
-            indices (Union[int, slice, Tuple[Union[int, slice], ...]]): The indices to select.
-        
-        Returns:
-            Tensor: The subset of the tensor.
-        """
-        out = Tensor(self.data[indices], _children=(self, ), requires_grad=self.requires_grad)
-
-        if self.requires_grad and Tensor.is_grad_enabled():
-            def _getitem_backward() -> None:
-                self.grad[indices] += out.grad
-            out.grad_fn = _getitem_backward
-            out.set_requires_grad(True)
-        
-        return out
-    
-    def __setitem__(self, indices: Union[int, slice, Tuple[Union[int, slice], ...]], value: 'Tensor') -> None:
-        """
-        Sets a subset of the tensor using indices.
-        
-        Args:
-            indices (Union[int, slice, Tuple[Union[int, slice], ...]]): The indices to select.
-            value (Tensor): The value to set.
-        """
-        self.data[indices] = value.data
-    
     def __repr__(self) -> str:
+        """Returns a string representation of the tensor."""
+        return f"Tensor(data={self.data}, requires_grad={self.requires_grad})"
+
+    def __matmul__(self, other: TensorLike) -> Tensor:
+        """Performs matrix multiplication.
+        
+        Args:
+            other: The tensor to multiply with.
+            
+        Returns:
+            The result of matrix multiplication.
+            
+        Raises:
+            ShapeError: If matrix shapes are incompatible.
+            OperationError: If the operation fails.
         """
-        Returns a string representation of the tensor.
+        try:
+            other = other if isinstance(other, Tensor) else Tensor(other)
+            if self.ndim < 2 or other.ndim < 2:
+                raise ShapeError("Matrix multiplication requires at least 2D tensors")
+                
+            out = Tensor(self._array_ops['matmul'](self.data, other.data), _children=(self, other))
+
+            if self.requires_grad or other.requires_grad:
+                if self.is_grad_enabled():
+                    def _matmul_backward() -> None:
+                        if self.requires_grad:
+                            self.grad = np.add(self.grad, np.matmul(out.grad, other.data.T))
+                        if other.requires_grad:
+                            other.grad = np.add(other.grad, np.matmul(self.data.T, out.grad))
+                    out.grad_fn = _matmul_backward
+                    out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Matrix multiplication failed: {str(e)}") from e
+
+    def exp(self) -> Tensor:
+        """Computes element-wise exponential.
         
         Returns:
-            str: The string representation of the tensor.
+            A new tensor with exponential of elements.
+            
+        Raises:
+            OperationError: If the operation fails.
         """
-        return f"Tensor({self.data}, requires_grad={self.requires_grad})"
+        try:
+            out = Tensor(np.exp(self.data), _children=(self,))
+
+            if self.requires_grad and self.is_grad_enabled():
+                def _exp_backward() -> None:
+                    self.grad = np.add(self.grad, out.data * out.grad)
+                out.grad_fn = _exp_backward
+                out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Exponential operation failed: {str(e)}") from e
+
+    def log(self) -> Tensor:
+        """Computes element-wise natural logarithm.
+        
+        Returns:
+            A new tensor with logarithm of elements.
+            
+        Raises:
+            OperationError: If the operation fails or input contains non-positive values.
+        """
+        try:
+            if np.any(self.data <= 0):
+                raise ValueError("Log of non-positive values")
+                
+            out = Tensor(np.log(self.data), _children=(self,))
+
+            if self.requires_grad and self.is_grad_enabled():
+                def _log_backward() -> None:
+                    self.grad = np.add(self.grad, out.grad / self.data)
+                out.grad_fn = _log_backward
+                out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Logarithm operation failed: {str(e)}") from e
+
+    def mean(self, axis: Optional[int] = None, keepdims: bool = False) -> Tensor:
+        """Computes mean along specified axis.
+        
+        Args:
+            axis: The axis along which to compute mean.
+            keepdims: Whether to keep reduced dimensions.
+            
+        Returns:
+            A new tensor containing the mean values.
+            
+        Raises:
+            OperationError: If the operation fails.
+        """
+        try:
+            out = Tensor(np.mean(self.data, axis=axis, keepdims=keepdims), _children=(self,))
+
+            if self.requires_grad and self.is_grad_enabled():
+                def _mean_backward() -> None:
+                    grad = out.grad
+                    if not keepdims:
+                        if axis is None:
+                            grad = grad.reshape((1,) * self.ndim)
+                        else:
+                            shape = list(self.shape)
+                            shape[axis] = 1
+                            grad = grad.reshape(shape)
+                    
+                    size = self.data.size if axis is None else self.data.shape[axis]
+                    self.grad = np.add(self.grad, np.broadcast_to(grad, self.shape) / size)
+                    
+                out.grad_fn = _mean_backward
+                out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Mean operation failed: {str(e)}") from e
+
+    def max(self, axis: Optional[int] = None, keepdims: bool = False) -> Tensor:
+        """Computes maximum values along specified axis.
+        
+        Args:
+            axis: The axis along which to compute maximum.
+            keepdims: Whether to keep reduced dimensions.
+            
+        Returns:
+            A new tensor containing the maximum values.
+            
+        Raises:
+            OperationError: If the operation fails.
+        """
+        try:
+            out = Tensor(np.max(self.data, axis=axis, keepdims=keepdims), _children=(self,))
+
+            if self.requires_grad and self.is_grad_enabled():
+                def _max_backward() -> None:
+                    grad = out.grad
+                    if not keepdims:
+                        if axis is None:
+                            grad = grad.reshape((1,) * self.ndim)
+                        else:
+                            shape = list(self.shape)
+                            shape[axis] = 1
+                            grad = grad.reshape(shape)
+                    
+                    mask = (self.data == np.max(self.data, axis=axis, keepdims=True))
+                    self.grad = np.add(self.grad, grad * mask)
+                    
+                out.grad_fn = _max_backward
+                out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Max operation failed: {str(e)}") from e
+
+    def __pow__(self, power: Union[int, float]) -> Tensor:
+        """Raises tensor elements to specified power.
+        
+        Args:
+            power: The power to raise elements to.
+            
+        Returns:
+            A new tensor with powered elements.
+            
+        Raises:
+            OperationError: If the operation fails.
+        """
+        try:
+            out = Tensor(self._array_ops['pow'](self.data, power), _children=(self,))
+
+            if self.requires_grad and self.is_grad_enabled():
+                def _pow_backward() -> None:
+                    self.grad = np.add(self.grad, 
+                                     power * self._array_ops['pow'](self.data, power - 1) * out.grad)
+                out.grad_fn = _pow_backward
+                out.requires_grad = True
+
+            return out
+        except Exception as e:
+            raise OperationError(f"Power operation failed: {str(e)}") from e
+
+    @property
+    def shape(self) -> Shape:
+        """Returns the shape of the tensor."""
+        return self._shape
+
+    def item(self) -> Union[int, float]:
+        """Returns the value of a scalar tensor.
+        
+        Returns:
+            The scalar value.
+            
+        Raises:
+            ValueError: If tensor is not a scalar.
+        """
+        if self.data.size != 1:
+            raise ValueError("Only tensors with one element can be converted to scalar")
+        return self.data.item()

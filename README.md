@@ -2,7 +2,7 @@
 
 # vinsgrad: A Tiny Deep Learning Library
 
-**vinsgrad** is a lightweight deep learning library inspired by [Karpathy's micrograd](https://github.com/karpathy/micrograd), [smolorg's smolgrad](https://github.com/smolorg/smolgrad), and PyTorch. Created as a learning tool, it aims to simplify the understanding of **automatic differentiation** and **backpropagation**, the foundational techniques behind modern deep learning. Whether you're just starting out or looking to deepen your knowledge, **vinsgrad** provides a hands-on way to explore the mechanics of neural networks.
+**vinsgrad** is a lightweight deep learning library inspired by [Karpathy's micrograd](https://github.com/karpathy/micrograd) and PyTorch. Created as a learning tool, it aims to simplify the understanding of **automatic differentiation** and **backpropagation**, the foundational techniques behind modern deep learning. Whether you're just starting out or looking to deepen your knowledge, **vinsgrad** provides a hands-on way to explore the mechanics of neural networks.
 
 ---
 
@@ -152,6 +152,6 @@ This project is licensed under the MIT License. See the [LICENSE](https://github
 
 ## Acknowledgements
 
-Special thanks to [Andrej Karpathy](https://github.com/karpathy) for **micrograd**, [smolorg](https://github.com/smolorg) for **smolgrad**, and the PyTorch team for inspiring this journey into deep learning fundamentals.
+Special thanks to [Andrej Karpathy](https://github.com/karpathy) for **micrograd** and the PyTorch team for inspiring this journey into deep learning fundamentals.
 
 Happy learning and experimenting!
